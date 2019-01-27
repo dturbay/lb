@@ -60,13 +60,12 @@ func TestLB(t *testing.T) {
 	summ := 0
 	for _, strNumber := range strSlice {
 		number, _ := strconv.Atoi(strNumber)
-		summ += number
+		summ += number + 1
 	}
 	headerSumm, _ := strconv.Atoi(resp.Header.Get("Summ"))
 	if summ != headerSumm {
-		t.Error()
+		t.Error("Summ of numbers received in http response is not equal to Sum from header")
 	}
 	glog.Infof("Calculated summ: %d", summ)
 	glog.Infof("Summ: %s", resp.Header.Get("Summ"))
-
 }
