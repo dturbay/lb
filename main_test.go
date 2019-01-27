@@ -13,6 +13,9 @@ import (
 	"github.com/golang/glog"
 )
 
+func init() {
+}
+
 func handler(w http.ResponseWriter, r *http.Request) {
 	var numbers [100]byte
 	var strNumbers [100]string
@@ -42,13 +45,10 @@ func startWebServer() int {
 func TestLB(t *testing.T) {
 	webServerPort := startWebServer()
 	webHost := fmt.Sprintf("localhost:%d", webServerPort)
-	webURL := fmt.Sprintf("http://%s/", webHost)
-	fmt.Println(webURL)
 	lbStartedChan := make(chan int)
-	lb := LoadBalancer{port: 8888, backends: []string{webHost}, startedSignal: lbStartedChan}
+	lb := LoadBalancer{port: 0, backends: []string{webHost}, startedSignal: lbStartedChan}
 	go lb.Start()
 	lbPort := <-lbStartedChan
-	fmt.Println("4", lbPort) // debug
 	lbURL := fmt.Sprintf("http://localhost:%d/", lbPort)
 	resp, err := http.Get(lbURL)
 	if err != nil {
@@ -62,7 +62,11 @@ func TestLB(t *testing.T) {
 		number, _ := strconv.Atoi(strNumber)
 		summ += number
 	}
-	fmt.Println("Calculated summ: ", summ)
-	fmt.Println("Summ", resp.Header.Get("Summ"))
+	headerSumm, _ := strconv.Atoi(resp.Header.Get("Summ"))
+	if summ != headerSumm {
+		t.Error()
+	}
+	glog.Infof("Calculated summ: %d", summ)
+	glog.Infof("Summ: %s", resp.Header.Get("Summ"))
 
 }

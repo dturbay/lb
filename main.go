@@ -55,8 +55,8 @@ func (lb *LoadBalancer) handleIncomingConn(clientConn net.Conn) {
 			glog.V(1).Info(err) //  clientConn close trigger error
 		}
 		glog.Info("client data transfered")
-		backendConn.Close()      // Client initiated closing communication, all data that comes from backend makes no sense now
-		endCommunicationSig <- 0 // put smth into chan to signal about closed link
+		backendConn.Close()        // Client initiated closing communication, all data that comes from backend makes no sense now
+		close(endCommunicationSig) // trigger receiver
 	}()
 
 	go func() {
@@ -65,8 +65,8 @@ func (lb *LoadBalancer) handleIncomingConn(clientConn net.Conn) {
 			glog.V(1).Info(err) // backendConn close trigger error
 		}
 		glog.Info("backend data transfered")
-		clientConn.Close()       // backend closed connection, everithing from client makes no sense now
-		endCommunicationSig <- 0 // put smth into chan to signal about closed link
+		clientConn.Close()         // backend closed connection, everithing from client makes no sense now
+		close(endCommunicationSig) // trigger receiver
 	}()
 
 	<-endCommunicationSig // any closed link means end communication
@@ -83,11 +83,8 @@ func (lb *LoadBalancer) Start() {
 	if lb.port == 0 {
 		port = listener.Addr().(*net.TCPAddr).Port
 	}
-	fmt.Println("1") // debug
 	if lb.startedSignal != nil {
-		fmt.Println("2") // debug
 		lb.startedSignal <- port
-		fmt.Println("3") // debug
 	}
 	defer listener.Close()
 	for {
@@ -99,7 +96,6 @@ func (lb *LoadBalancer) Start() {
 		glog.V(1).Infof("Connection accepted from: %s", conn.RemoteAddr())
 		go lb.handleIncomingConn(conn)
 	}
-
 }
 
 func main() {
