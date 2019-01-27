@@ -60,7 +60,7 @@ func TestLB(t *testing.T) {
 	summ := 0
 	for _, strNumber := range strSlice {
 		number, _ := strconv.Atoi(strNumber)
-		summ += number + 1
+		summ += number
 	}
 	headerSumm, _ := strconv.Atoi(resp.Header.Get("Summ"))
 	if summ != headerSumm {
