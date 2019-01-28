@@ -6,15 +6,17 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync/atomic"
 
 	"github.com/golang/glog"
 )
 
 // LoadBalancer configuration
 type LoadBalancer struct {
-	port          int
-	backends      []string
-	startedSignal chan int
+	port               int
+	backends           []string
+	startedSignal      chan int
+	_acceptedConnCount uint64 // stats
 }
 
 /**
@@ -54,9 +56,9 @@ func (lb *LoadBalancer) handleIncomingConn(clientConn net.Conn) {
 		if _, err := io.Copy(backendWriter, clientReader); err != nil {
 			glog.V(1).Info(err) //  clientConn close trigger error
 		}
-		glog.Info("client data transfered")
-		backendConn.Close()        // Client initiated closing communication, all data that comes from backend makes no sense now
-		close(endCommunicationSig) // trigger receiver
+		glog.V(5).Info("client data transfered")
+		backendConn.Close()      // Client initiated closing communication, all data that comes from backend makes no sense now
+		endCommunicationSig <- 0 // trigger receiver
 	}()
 
 	go func() {
@@ -64,9 +66,9 @@ func (lb *LoadBalancer) handleIncomingConn(clientConn net.Conn) {
 		if _, err := io.Copy(clientWriter, backendReader); err != nil {
 			glog.V(1).Info(err) // backendConn close trigger error
 		}
-		glog.Info("backend data transfered")
-		clientConn.Close()         // backend closed connection, everithing from client makes no sense now
-		close(endCommunicationSig) // trigger receiver
+		glog.V(5).Info("backend data transfered")
+		clientConn.Close()       // backend closed connection, everithing from client makes no sense now
+		endCommunicationSig <- 0 // trigger receiver
 	}()
 
 	<-endCommunicationSig // any closed link means end communication
@@ -74,8 +76,7 @@ func (lb *LoadBalancer) handleIncomingConn(clientConn net.Conn) {
 
 // Start load balancer
 func (lb *LoadBalancer) Start() {
-	listener, err := net.Listen("tcp6",
-		fmt.Sprintf(":%d", lb.port))
+	listener, err := net.Listen("tcp6", fmt.Sprintf(":%d", lb.port))
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -93,7 +94,8 @@ func (lb *LoadBalancer) Start() {
 			glog.Error(err)
 			continue
 		}
-		glog.V(1).Infof("Connection accepted from: %s", conn.RemoteAddr())
+		atomic.AddUint64(&lb._acceptedConnCount, 1)
+		glog.V(3).Infof("Connection accepted from: %s", conn.RemoteAddr())
 		go lb.handleIncomingConn(conn)
 	}
 }

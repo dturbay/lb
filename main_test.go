@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/golang/glog"
 )
@@ -16,7 +18,9 @@ import (
 func init() {
 }
 
-func handler(w http.ResponseWriter, r *http.Request) {
+type Handler struct{}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var numbers [100]byte
 	var strNumbers [100]string
 	rand.Read(numbers[0:])
@@ -35,37 +39,74 @@ func startWebServer() int {
 		glog.Fatal(err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
-	http.HandleFunc("/", handler)
+	listener.Close()
+	server := &http.Server{
+		Addr:         fmt.Sprintf(":%d", port),
+		Handler:      &Handler{},
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+	}
 	go func() {
-		glog.Fatal(http.Serve(listener, nil))
+		glog.Fatal(server.ListenAndServe())
 	}()
 	return port
 }
 
 func TestLB(t *testing.T) {
 	webServerPort := startWebServer()
+	glog.Infof("Web Server port: %d", webServerPort)
 	webHost := fmt.Sprintf("localhost:%d", webServerPort)
 	lbStartedChan := make(chan int)
 	lb := LoadBalancer{port: 0, backends: []string{webHost}, startedSignal: lbStartedChan}
 	go lb.Start()
 	lbPort := <-lbStartedChan
+	glog.Infof("LoadBalancer port: %d", lbPort)
 	lbURL := fmt.Sprintf("http://localhost:%d/", lbPort)
-	resp, err := http.Get(lbURL)
-	if err != nil {
-		glog.Fatal(err)
+
+	const ClientCount = 1000   // Requests per goroutine
+	const GoRoutineCount = 100 // Simulate 30 simultanious clients
+	// https://stackoverflow.com/questions/39813587/go-client-program-generates-a-lot-a-sockets-in-time-wait-state
+	// this property makes http client to use GoRoutineCount Keep-Alive connections
+	// so in fact - LoadBalancer accept GoRoutineCount connections
+	// TODO(dturbai): remove this prop and find out how to use SO_REUSE_ADDRESS option
+	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = GoRoutineCount
+
+	var wg sync.WaitGroup
+	wg.Add(GoRoutineCount)
+
+	for i := 0; i < GoRoutineCount; i++ {
+		go func() {
+			defer func() {
+				wg.Done()
+			}()
+			for i := 0; i < ClientCount; i++ {
+				httpClient := &http.Client{
+					Timeout: 15 * time.Second,
+				}
+				resp, err := httpClient.Get(lbURL)
+				if err != nil {
+					glog.Fatal(err)
+				}
+				defer resp.Body.Close()
+				body, err := ioutil.ReadAll(resp.Body)
+				glog.V(1).Infof("Response size in bytes: %d", len(body))
+				strSlice := strings.Split(string(body), ",")
+				summ := 0
+				for _, strNumber := range strSlice {
+					number, _ := strconv.Atoi(strNumber)
+					summ += number
+				}
+				headerSumm, _ := strconv.Atoi(resp.Header.Get("Summ"))
+				if summ != headerSumm {
+					t.Error("Summ of numbers received in http response: %d"+
+						"is not equal to Sum from header: %d", summ, headerSumm)
+				}
+				glog.V(3).Infof("Calculated summ: %d", summ)
+				glog.V(1).Infof("All headers: %v", resp.Header)
+				glog.V(3).Infof("Summ: %s", resp.Header.Get("Summ"))
+			}
+		}()
 	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	strSlice := strings.Split(string(body), ",")
-	summ := 0
-	for _, strNumber := range strSlice {
-		number, _ := strconv.Atoi(strNumber)
-		summ += number
-	}
-	headerSumm, _ := strconv.Atoi(resp.Header.Get("Summ"))
-	if summ != headerSumm {
-		t.Error("Summ of numbers received in http response is not equal to Sum from header")
-	}
-	glog.Infof("Calculated summ: %d", summ)
-	glog.Infof("Summ: %s", resp.Header.Get("Summ"))
+	wg.Wait()
+	glog.Infof("LoadBalancer accepted %d connections", lb._acceptedConnCount)
 }
