@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 
 	"github.com/golang/glog"
@@ -49,29 +50,28 @@ func (lb *LoadBalancer) handleIncomingConn(clientConn net.Conn) {
 	backendWriter := bufio.NewWriter(backendConn)
 	backendReader := bufio.NewReader(backendConn)
 
-	endCommunicationSig := make(chan int)
-
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
+		defer wg.Done()
 		// transfer data from client to backend
 		if _, err := io.Copy(backendWriter, clientReader); err != nil {
 			glog.V(1).Info(err) //  clientConn close trigger error
 		}
 		glog.V(5).Info("client data transfered")
-		backendConn.Close()      // Client initiated closing communication, all data that comes from backend makes no sense now
-		endCommunicationSig <- 0 // trigger receiver
+		backendConn.Close() // Client initiated closing communication, all data that comes from backend makes no sense now
 	}()
 
 	go func() {
+		defer wg.Done()
 		// transfer data from backend to client
 		if _, err := io.Copy(clientWriter, backendReader); err != nil {
 			glog.V(1).Info(err) // backendConn close trigger error
 		}
 		glog.V(5).Info("backend data transfered")
-		clientConn.Close()       // backend closed connection, everithing from client makes no sense now
-		endCommunicationSig <- 0 // trigger receiver
+		clientConn.Close() // backend closed connection, everithing from client makes no sense now
 	}()
-
-	<-endCommunicationSig // any closed link means end communication
+	wg.Wait()
 }
 
 // Start load balancer

@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -76,9 +79,7 @@ func TestLB(t *testing.T) {
 
 	for i := 0; i < GoRoutineCount; i++ {
 		go func() {
-			defer func() {
-				wg.Done()
-			}()
+			defer wg.Done()
 			for i := 0; i < ClientCount; i++ {
 				httpClient := &http.Client{
 					Timeout: 15 * time.Second,
@@ -109,4 +110,39 @@ func TestLB(t *testing.T) {
 	}
 	wg.Wait()
 	glog.Infof("LoadBalancer accepted %d connections", lb._acceptedConnCount)
+}
+
+func printStatsForWebServer(url string) {
+	cmd := exec.Command("ab", "-c", "100", "-n", "2000", url)
+	var stdOut bytes.Buffer
+	var stdErr bytes.Buffer
+	cmd.Stdout = &stdOut
+	cmd.Stderr = &stdErr
+	err := cmd.Run()
+	if err != nil {
+		glog.Infof("ab stderr: %s", stdErr.String())
+		glog.Fatal(err)
+	}
+	glog.Infof("ab stdout: %s", stdOut.String())
+}
+
+func TestLB_With_ab(t *testing.T) {
+	glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
+	webServerPort := startWebServer()
+	glog.Infof("Web Server port: %d", webServerPort)
+	webHost := fmt.Sprintf("localhost:%d", webServerPort)
+	lbStartedChan := make(chan int)
+	lb := LoadBalancer{port: 0, backends: []string{webHost}, startedSignal: lbStartedChan}
+	go lb.Start()
+	lbPort := <-lbStartedChan
+	glog.Infof("LoadBalancer port: %d", lbPort)
+	lbURL := fmt.Sprintf("http://localhost:%d/", lbPort)
+
+	printStatsForWebServer(webHost + "/")
+	glog.Info("--------------------------------------------------")
+	glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
+	printStatsForWebServer(lbURL)
+	glog.Infof("LoadBalancer accepted %d connections", lb._acceptedConnCount)
+	// ok it seems I have goroutine leak
+	glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
 }
