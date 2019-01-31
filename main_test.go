@@ -46,8 +46,8 @@ func startWebServer() int {
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
 		Handler:      &Handler{},
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  1 * time.Second,
+		WriteTimeout: 1 * time.Second,
 	}
 	go func() {
 		glog.Fatal(server.ListenAndServe())
@@ -60,7 +60,11 @@ func TestLB(t *testing.T) {
 	glog.Infof("Web Server port: %d", webServerPort)
 	webHost := fmt.Sprintf("localhost:%d", webServerPort)
 	lbStartedChan := make(chan int)
-	lb := LoadBalancer{port: 0, backends: []string{webHost}, startedSignal: lbStartedChan}
+	backendTCPAddr, err := net.ResolveTCPAddr("tcp", webHost)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	lb := LoadBalancer{port: 0, backends: []*net.TCPAddr{backendTCPAddr}, startedSignal: lbStartedChan}
 	go lb.Start()
 	lbPort := <-lbStartedChan
 	glog.Infof("LoadBalancer port: %d", lbPort)
@@ -82,7 +86,7 @@ func TestLB(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < ClientCount; i++ {
 				httpClient := &http.Client{
-					Timeout: 15 * time.Second,
+					Timeout: 1 * time.Second,
 				}
 				resp, err := httpClient.Get(lbURL)
 				if err != nil {
@@ -110,10 +114,13 @@ func TestLB(t *testing.T) {
 	}
 	wg.Wait()
 	glog.Infof("LoadBalancer accepted %d connections", lb._acceptedConnCount)
+	// time.Sleep(3e9)
+	// glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
 }
 
 func printStatsForWebServer(url string) {
-	cmd := exec.Command("ab", "-c", "100", "-n", "2000", url)
+	// concurency - 100, total queries 5000
+	cmd := exec.Command("ab", "-c", "100", "-n", "5000", url)
 	var stdOut bytes.Buffer
 	var stdErr bytes.Buffer
 	cmd.Stdout = &stdOut
@@ -126,13 +133,21 @@ func printStatsForWebServer(url string) {
 	glog.Infof("ab stdout: %s", stdOut.String())
 }
 
+/*
+Load test / benchmark with ab tool.
+It does 2 runs: against web server and LB
+*/
 func TestLB_With_ab(t *testing.T) {
 	glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
 	webServerPort := startWebServer()
 	glog.Infof("Web Server port: %d", webServerPort)
 	webHost := fmt.Sprintf("localhost:%d", webServerPort)
 	lbStartedChan := make(chan int)
-	lb := LoadBalancer{port: 0, backends: []string{webHost}, startedSignal: lbStartedChan}
+	backendTCPAddr, err := net.ResolveTCPAddr("tcp", webHost)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	lb := LoadBalancer{port: 0, backends: []*net.TCPAddr{backendTCPAddr}, startedSignal: lbStartedChan}
 	go lb.Start()
 	lbPort := <-lbStartedChan
 	glog.Infof("LoadBalancer port: %d", lbPort)

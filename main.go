@@ -15,7 +15,7 @@ import (
 // LoadBalancer configuration
 type LoadBalancer struct {
 	port               int
-	backends           []string
+	backends           []*net.TCPAddr
 	startedSignal      chan int
 	_acceptedConnCount uint64 // stats
 }
@@ -39,7 +39,7 @@ type LoadBalancer struct {
 */
 func (lb *LoadBalancer) handleIncomingConn(clientConn net.Conn) {
 	defer clientConn.Close()
-	backendConn, err := net.Dial("tcp", lb.backends[0]) // TODO(dturbai): implement round-robin for backend selection
+	backendConn, err := net.DialTCP("tcp", nil, lb.backends[0]) // TODO(dturbai): implement round-robin for backend selection
 	if err != nil {
 		glog.Error("Failed to connect to backend", err)
 		return
@@ -100,11 +100,17 @@ func (lb *LoadBalancer) Start() {
 	}
 }
 
+var lbPort = flag.Int("port", 8888, "LoadBalancer tcp port")
+
 func main() {
 	flag.Parse()
 	glog.Info("Starting lb ...")
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:7777")
+	if err != nil {
+		glog.Fatal(err)
+	}
 	loadBalancer := LoadBalancer{
-		port:     8888, // TODO(dturbai): flag for port?
-		backends: []string{"localhost:7777"}}
+		port:     *lbPort,
+		backends: []*net.TCPAddr{addr}}
 	loadBalancer.Start()
 }
