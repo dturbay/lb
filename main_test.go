@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,25 +16,25 @@ import (
 	"github.com/golang/glog"
 )
 
-func init() {
-}
-
-type Handler struct{}
-
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var numbers [100]byte
-	var strNumbers [100]string
-	rand.Read(numbers[0:])
-	summ := 0
-	for ind, number := range numbers {
-		strNumbers[ind] = strconv.Itoa(int(number))
-		summ += int(number)
+func retransmitRequestToResponse(w http.ResponseWriter, r *http.Request) {
+	inputBytes, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		glog.Fatal(err)
 	}
-	w.Header().Set("Summ", strconv.Itoa(summ))
-	fmt.Fprintf(w, strings.Join(strNumbers[:], ","))
+	w.Write(inputBytes)
 }
 
-func startWebServer() int {
+func randomNumbersResponse(w http.ResponseWriter, r *http.Request) {
+	var responseBytes [100]byte
+	if _, err := rand.Read(responseBytes[:]); err != nil {
+		glog.Fatal(err)
+	}
+	if _, err := w.Write(responseBytes[:]); err != nil {
+		glog.Fatal(err)
+	}
+}
+
+func startWebServer(handler http.HandlerFunc) int {
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		glog.Fatal(err)
@@ -45,7 +43,7 @@ func startWebServer() int {
 	listener.Close()
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
-		Handler:      &Handler{},
+		Handler:      handler,
 		ReadTimeout:  1 * time.Second,
 		WriteTimeout: 1 * time.Second,
 	}
@@ -55,8 +53,21 @@ func startWebServer() int {
 	return port
 }
 
+// really? no way to compare slices???????
+func compareSlices(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestLB(t *testing.T) {
-	webServerPort := startWebServer()
+	webServerPort := startWebServer(retransmitRequestToResponse)
 	glog.Infof("Web Server port: %d", webServerPort)
 	webHost := fmt.Sprintf("localhost:%d", webServerPort)
 	lbStartedChan := make(chan int)
@@ -70,8 +81,8 @@ func TestLB(t *testing.T) {
 	glog.Infof("LoadBalancer port: %d", lbPort)
 	lbURL := fmt.Sprintf("http://localhost:%d/", lbPort)
 
-	const ClientCount = 1000   // Requests per goroutine
-	const GoRoutineCount = 100 // Simulate 30 simultanious clients
+	const ClientCount = 50    // Requests per goroutine
+	const GoRoutineCount = 50 // Simulate 30 simultanious clients
 	// https://stackoverflow.com/questions/39813587/go-client-program-generates-a-lot-a-sockets-in-time-wait-state
 	// this property makes http client to use GoRoutineCount Keep-Alive connections
 	// so in fact - LoadBalancer accept GoRoutineCount connections
@@ -88,27 +99,28 @@ func TestLB(t *testing.T) {
 				httpClient := &http.Client{
 					Timeout: 1 * time.Second,
 				}
-				resp, err := httpClient.Get(lbURL)
+				// 7000 is bigger than defaultBufSize in bufio (4096)
+				const MaxRequestSize = 7000
+				var numbers [MaxRequestSize]byte
+				var payloadSize = rand.Intn(MaxRequestSize)
+				postSlice := numbers[:payloadSize]
+				_, err := rand.Read(postSlice)
 				if err != nil {
 					glog.Fatal(err)
 				}
-				defer resp.Body.Close()
-				body, err := ioutil.ReadAll(resp.Body)
-				glog.V(1).Infof("Response size in bytes: %d", len(body))
-				strSlice := strings.Split(string(body), ",")
-				summ := 0
-				for _, strNumber := range strSlice {
-					number, _ := strconv.Atoi(strNumber)
-					summ += number
+				resp, err := httpClient.Post(lbURL, "text/data", bytes.NewReader(postSlice))
+				if err != nil {
+					glog.Fatal(err)
 				}
-				headerSumm, _ := strconv.Atoi(resp.Header.Get("Summ"))
-				if summ != headerSumm {
-					t.Error("Summ of numbers received in http response: %d"+
-						"is not equal to Sum from header: %d", summ, headerSumm)
+				respBytes, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					glog.Fatal(err)
 				}
-				glog.V(3).Infof("Calculated summ: %d", summ)
-				glog.V(1).Infof("All headers: %v", resp.Header)
-				glog.V(3).Infof("Summ: %s", resp.Header.Get("Summ"))
+				resp.Body.Close()
+				// glog.V(1).Infof("Response size in bytes: %d", len(body))
+				if !compareSlices(postSlice, respBytes) {
+					t.Errorf("Posted bytes %v are not equal to received bytes %v", postSlice, respBytes)
+				}
 			}
 		}()
 	}
@@ -118,7 +130,7 @@ func TestLB(t *testing.T) {
 	// glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
 }
 
-func printStatsForWebServer(url string) {
+func runABTool(url string) {
 	// concurency - 100, total queries 5000
 	cmd := exec.Command("ab", "-c", "100", "-n", "5000", url)
 	var stdOut bytes.Buffer
@@ -139,7 +151,7 @@ It does 2 runs: against web server and LB
 */
 func TestLB_With_ab(t *testing.T) {
 	glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
-	webServerPort := startWebServer()
+	webServerPort := startWebServer(randomNumbersResponse)
 	glog.Infof("Web Server port: %d", webServerPort)
 	webHost := fmt.Sprintf("localhost:%d", webServerPort)
 	lbStartedChan := make(chan int)
@@ -153,10 +165,10 @@ func TestLB_With_ab(t *testing.T) {
 	glog.Infof("LoadBalancer port: %d", lbPort)
 	lbURL := fmt.Sprintf("http://localhost:%d/", lbPort)
 
-	printStatsForWebServer(webHost + "/")
+	runABTool(webHost + "/")
 	glog.Info("--------------------------------------------------")
-	glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
-	printStatsForWebServer(lbURL)
+	// glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
+	runABTool(lbURL)
 	glog.Infof("LoadBalancer accepted %d connections", lb._acceptedConnCount)
 	// ok it seems I have goroutine leak
 	glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
