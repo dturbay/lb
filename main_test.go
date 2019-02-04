@@ -24,6 +24,7 @@ func retransmitRequestToResponse(w http.ResponseWriter, r *http.Request) {
 	w.Write(inputBytes)
 }
 
+// http handler that ingores input, output array of 100 random numbers
 func randomNumbersResponse(w http.ResponseWriter, r *http.Request) {
 	var responseBytes [100]byte
 	if _, err := rand.Read(responseBytes[:]); err != nil {
@@ -86,7 +87,7 @@ func TestLB(t *testing.T) {
 	// https://stackoverflow.com/questions/39813587/go-client-program-generates-a-lot-a-sockets-in-time-wait-state
 	// this property makes http client to use GoRoutineCount Keep-Alive connections
 	// so in fact - LoadBalancer accept GoRoutineCount connections
-	// TODO(dturbai): remove this prop and find out how to use SO_REUSE_ADDRESS option
+	// TODO(dturbai): remove this prop and find out how to turn SO_REUSE_ADDRESS option on
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = GoRoutineCount
 
 	var wg sync.WaitGroup
@@ -170,6 +171,5 @@ func TestLB_With_ab(t *testing.T) {
 	// glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
 	runABTool(lbURL)
 	glog.Infof("LoadBalancer accepted %d connections", lb._acceptedConnCount)
-	// ok it seems I have goroutine leak
 	glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
 }
