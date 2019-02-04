@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -45,17 +44,13 @@ func (lb *LoadBalancer) handleIncomingConn(clientConn net.Conn) {
 		return
 	}
 	defer backendConn.Close()
-	clientReader := bufio.NewReader(clientConn)
-	clientWriter := bufio.NewWriter(clientConn)
-	backendWriter := bufio.NewWriter(backendConn)
-	backendReader := bufio.NewReader(backendConn)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		// transfer data from client to backend
-		if _, err := io.Copy(backendWriter, clientReader); err != nil {
+		if _, err := io.Copy(backendConn, clientConn); err != nil {
 			glog.V(1).Info(err) //  clientConn close trigger error
 		}
 		glog.V(5).Info("client data transfered")
@@ -65,7 +60,7 @@ func (lb *LoadBalancer) handleIncomingConn(clientConn net.Conn) {
 	go func() {
 		defer wg.Done()
 		// transfer data from backend to client
-		if _, err := io.Copy(clientWriter, backendReader); err != nil {
+		if _, err := io.Copy(clientConn, backendConn); err != nil {
 			glog.V(1).Info(err) // backendConn close trigger error
 		}
 		glog.V(5).Info("backend data transfered")
@@ -94,6 +89,11 @@ func (lb *LoadBalancer) Start() {
 			glog.Error(err)
 			continue
 		}
+		// tcpconn, _ := conn.(*net.TCPConn)
+		// file, err := tcpconn.File()
+		// err = syscall.SetsockoptInt(int(file.Fd()), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+		// file.Close()
+
 		atomic.AddUint64(&lb._acceptedConnCount, 1)
 		glog.V(3).Infof("Connection accepted from: %s", conn.RemoteAddr())
 		go lb.handleIncomingConn(conn)

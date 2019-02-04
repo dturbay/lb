@@ -78,7 +78,8 @@ Percentage of the requests served within a certain time (ms)
   98%    147
   99%    152
  100%    160 (longest request) </pre> </td>
-<td> <pre>This is ApacheBench, Version 2.3 <$Revision: 1826891 $>
+<td> <pre>
+This is ApacheBench, Version 2.3 <$Revision: 1826891 $>
 Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
 Licensed to The Apache Software Foundation, http://www.apache.org/
 
@@ -87,38 +88,39 @@ Benchmarking localhost (be patient)
 
 Server Software:
 Server Hostname:        localhost
-Server Port:            58815
+Server Port:            62586
 
 Document Path:          /
 Document Length:        100 bytes
 
 Concurrency Level:      100
-Time taken for tests:   6.284 seconds
+Time taken for tests:   3.578 seconds
 Complete requests:      5000
 Failed requests:        0
-Total transferred:      1084985 bytes
+Total transferred:      1085000 bytes
 HTML transferred:       500000 bytes
-Requests per second:    795.70 [#/sec] (mean)
-Time per request:       125.676 [ms] (mean)
-Time per request:       1.257 [ms] (mean, across all concurrent requests)
-Transfer rate:          168.62 [Kbytes/sec] received
+Requests per second:    1397.40 [#/sec] (mean)
+Time per request:       71.561 [ms] (mean)
+Time per request:       0.716 [ms] (mean, across all concurrent requests)
+Transfer rate:          296.13 [Kbytes/sec] received
 
 Connection Times (ms)
               min  mean[+/-sd] median   max
-Connect:        0   45  21.8     43     123
-Processing:     7   78  34.1     72     166
-Waiting:        2   66  36.6     59     161
-Total:         23  124  37.6    119     225
+Connect:        0   32  26.7     26     171
+Processing:     6   39  25.1     33     172
+Waiting:        2   24  20.3     20     154
+Total:          6   71  33.1     68     197
 
 Percentage of the requests served within a certain time (ms)
-  50%    119
-  66%    140
-  75%    155
-  80%    162
-  90%    177
-  95%    187
-  98%    194
-  99%    199
- 100%    225 (longest request) </pre> </td>
- <tr>
+  50%     68
+  66%     78
+  75%     83
+  80%     87
+  90%    101
+  95%    149
+  98%    179
+  99%    189
+ 100%    197 (longest request)
+ </pre> </td>
+ </tr>
 </table>

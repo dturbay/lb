@@ -166,9 +166,9 @@ func TestLB_With_ab(t *testing.T) {
 	glog.Infof("LoadBalancer port: %d", lbPort)
 	lbURL := fmt.Sprintf("http://localhost:%d/", lbPort)
 
-	runABTool(webHost + "/")
-	glog.Info("--------------------------------------------------")
-	// glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
+	// runABTool(webHost + "/")
+	// glog.Info("--------------------------------------------------")
+	glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
 	runABTool(lbURL)
 	glog.Infof("LoadBalancer accepted %d connections", lb._acceptedConnCount)
 	glog.Infof("runtime.NumGoroutine: %d", runtime.NumGoroutine())
